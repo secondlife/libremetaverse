@@ -362,13 +362,13 @@ namespace LibreMetaverse
         }
 
         public async Task<(bool uploadSuccess, string uploadStatus, bool compileSuccess, List<string>? compileMessages, UUID itemID, UUID assetID)> RequestUpdateScriptAgentInventoryAsync(
-            byte[] data, UUID itemID, bool mono, CancellationToken cancellationToken = default, IProgress<ProgressReport>? progress = null)
+            byte[] data, UUID itemID, ScriptTarget target = ScriptTarget.Mono, CancellationToken cancellationToken = default, IProgress<ProgressReport>? progress = null)
         {
             var cap = GetCapabilityURI("UpdateScriptAgent");
             if (cap == null)
                 throw new InvalidOperationException("UpdateScriptAgent capability is not currently available");
 
-            var request = new UpdateScriptAgentRequestMessage { ItemID = itemID, Target = mono ? "mono" : "lsl2" };
+            var request = new UpdateScriptAgentRequestMessage { ItemID = itemID, Target = ScriptTargetToString(target) };
             try
             {
                 var result = await PostCapAsync(cap, request.Serialize(), cancellationToken, progress).ConfigureAwait(false);
@@ -379,13 +379,13 @@ namespace LibreMetaverse
         }
 
         public async Task<(bool uploadSuccess, string uploadStatus, bool compileSuccess, List<string>? compileMessages, UUID itemID, UUID assetID)> RequestUpdateScriptTaskAsync(
-            byte[] data, UUID itemID, UUID taskID, bool mono, bool running, CancellationToken cancellationToken = default, IProgress<ProgressReport>? progress = null)
+            byte[] data, UUID itemID, UUID taskID, ScriptTarget target, bool running, CancellationToken cancellationToken = default, IProgress<ProgressReport>? progress = null)
         {
             var cap = GetCapabilityURI("UpdateScriptTask");
             if (cap == null)
                 throw new InvalidOperationException("UpdateScriptTask capability is not currently available");
 
-            var msg = new UpdateScriptTaskUpdateMessage { ItemID = itemID, TaskID = taskID, ScriptRunning = running, Target = mono ? "mono" : "lsl2" };
+            var msg = new UpdateScriptTaskUpdateMessage { ItemID = itemID, TaskID = taskID, ScriptRunning = running, Target = ScriptTargetToString(target) };
             try
             {
                 var result = await PostCapAsync(cap, msg.Serialize(), cancellationToken, progress).ConfigureAwait(false);
@@ -393,6 +393,49 @@ namespace LibreMetaverse
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex) { return (false, ex.Message, false, null, UUID.Zero, UUID.Zero); }
+        }
+
+        public async Task<(bool success, string name)> RequestCreateTaskScriptAsync(
+            UUID objectID, string name, string description, string vm, ScriptLanguage language,
+            CancellationToken cancellationToken = default)
+        {
+            var cap = GetCapabilityURI("CreateTaskInventoryItem");
+            if (cap == null)
+                throw new InvalidOperationException("CreateTaskInventoryItem capability is not currently available");
+
+            var msg = new CreateTaskInventoryItemMessage
+            {
+                ObjectID = objectID,
+                AssetType = AssetType.LSLText,
+                SubType = (int)language,
+                Name = name,
+                Description = description,
+                Vm = vm,
+                Enabled = true,
+                Permissions = new Permissions(
+                    (uint)int.MaxValue,
+                    0,
+                    0,
+                    (uint)(PermissionMask.Transfer | PermissionMask.Move),
+                    (uint)int.MaxValue)
+            };
+
+            try
+            {
+                var result = await PostCapAsync(cap, msg.Serialize(), cancellationToken).ConfigureAwait(false);
+                if (result is OSDMap map)
+                {
+                    var success = map["success"].AsBoolean();
+                    return (success, success ? map["name"].AsString() : map["message"].AsString());
+                }
+                return (false, string.Empty);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Logger.Error($"RequestCreateTaskScriptAsync failed for object {objectID}", ex, Client);
+                return (false, ex.Message);
+            }
         }
 
         /// <summary>
@@ -1460,6 +1503,29 @@ namespace LibreMetaverse
                 return new CopyItemsResult { Success = false, CopiedItems = null, Error = ex };
             }
         }
+
+        public enum ScriptLanguage
+        {
+            LSL = 0,
+            Lua = 1
+        }
+
+        public enum ScriptTarget
+        {
+            LSL2,
+            Mono,
+            Luau,
+            LSLLuau
+        }
+
+        private static string ScriptTargetToString(ScriptTarget target) => target switch
+        {
+            ScriptTarget.LSL2    => "lsl2",
+            ScriptTarget.Mono    => "mono",
+            ScriptTarget.Luau    => "luau",
+            ScriptTarget.LSLLuau => "lsl-luau",
+            _                    => "mono"
+        };
     }
 }
 
