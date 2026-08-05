@@ -2763,10 +2763,9 @@ namespace LibreMetaverse.Messages.Linden
             {
                 paramsMap["vm"] = OSD.FromString(Vm);
             }
-            if (Enabled != null)
+            if (Enabled.HasValue)
             {
-                bool not_null_enabled = (bool)Enabled;
-                paramsMap["enabled"] = OSD.FromBoolean(not_null_enabled);
+                paramsMap["enabled"] = OSD.FromBoolean(Enabled.Value);
             }
             if (TemplateID != UUID.Zero)
                 paramsMap["template_id"] = OSD.FromUUID(TemplateID);
@@ -2793,7 +2792,7 @@ namespace LibreMetaverse.Messages.Linden
         }
 
         // Request-only message; Deserialize is not used
-        public void Deserialize(OSDMap map) { }
+        public void Deserialize(OSDMap map) => throw new NotSupportedException("CreateTaskInventoryItemMessage is request-only");
     }
 
 

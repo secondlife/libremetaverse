@@ -395,8 +395,8 @@ namespace LibreMetaverse
             catch (Exception ex) { return (false, ex.Message, false, null, UUID.Zero, UUID.Zero); }
         }
 
-        public async Task<(bool success, string name)> RequestCreateTaskScriptAsync(
-            UUID objectID, string name, string description, string vm, ScriptLanguage language,
+        public async Task<(bool success, string result)> RequestCreateTaskScriptAsync(
+            UUID objectID, string name, string description, ScriptTarget target, ScriptLanguage language,
             CancellationToken cancellationToken = default)
         {
             var cap = GetCapabilityURI("CreateTaskInventoryItem");
@@ -410,7 +410,7 @@ namespace LibreMetaverse
                 SubType = (int)language,
                 Name = name,
                 Description = description,
-                Vm = vm,
+                Vm = ScriptTargetToString(target),
                 Enabled = true,
                 Permissions = new Permissions(
                     (uint)int.MaxValue,
@@ -1524,7 +1524,7 @@ namespace LibreMetaverse
             ScriptTarget.Mono    => "mono",
             ScriptTarget.Luau    => "luau",
             ScriptTarget.LSLLuau => "lsl-luau",
-            _                    => "mono"
+            _                    => throw new ArgumentOutOfRangeException(nameof(target), target, "Unknown script target")
         };
     }
 }
