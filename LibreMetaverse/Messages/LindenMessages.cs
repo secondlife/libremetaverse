@@ -2736,6 +2736,65 @@ namespace LibreMetaverse.Messages.Linden
         }
     }
 
+    /// <summary>Request POSTed to the CreateTaskInventoryItem capability to create a new item in a task's inventory.</summary>
+    public class CreateTaskInventoryItemMessage : IMessage
+    {
+        /// <summary>UUID of the in-world object whose inventory will receive the new item</summary>
+        public UUID ObjectID;
+        public AssetType AssetType;
+        /// <summary>Script sub-type: 0 = LSL, 1 = Lua (SST_LUA); ignored for non-script types</summary>
+        public int SubType;
+        public string Name;
+        public string Description;
+        public Permissions Permissions;
+        /// <summary>VM runtime for scripts: "lsl2", "mono", or "luau" (required for Lua); null = omit (use for notecards)</summary>
+        public string? Vm;
+        /// <summary> Whether the script starts enabled (default: true)</summary>
+        public bool? Enabled;
+        /// <summary>Optional template asset; UUID.Zero = server default</summary>
+        public UUID TemplateID;
+        /// <summary>Optional initial text content for notecards; null/empty = omitted</summary>
+        public string? Text;
+
+        public OSDMap Serialize()
+        {
+            var paramsMap = new OSDMap();
+            if (Vm != null)
+            {
+                paramsMap["vm"] = OSD.FromString(Vm);
+            }
+            if (Enabled.HasValue)
+            {
+                paramsMap["enabled"] = OSD.FromBoolean(Enabled.Value);
+            }
+            if (TemplateID != UUID.Zero)
+                paramsMap["template_id"] = OSD.FromUUID(TemplateID);
+            if (!string.IsNullOrEmpty(Text))
+                paramsMap["text"] = OSD.FromString(Text);
+
+            return new OSDMap
+            {
+                ["object_id"] = OSD.FromUUID(ObjectID),
+                ["asset_type"] = OSD.FromInteger((int)AssetType),
+                ["sub_type"] = OSD.FromInteger(SubType),
+                ["name"] = OSD.FromString(Name),
+                ["description"] = OSD.FromString(Description),
+                ["permissions"] = new OSDMap
+                {
+                    ["base"] = OSD.FromInteger((int)Permissions.BaseMask),
+                    ["owner"] = OSD.FromInteger((int)Permissions.OwnerMask),
+                    ["everyone"] = OSD.FromInteger((int)Permissions.EveryoneMask),
+                    ["group"] = OSD.FromInteger((int)Permissions.GroupMask),
+                    ["next_owner"] = OSD.FromInteger((int)Permissions.NextOwnerMask)
+                },
+                ["params"] = paramsMap
+            };
+        }
+
+        // Request-only message; Deserialize is not used
+        public void Deserialize(OSDMap map) => throw new NotSupportedException("CreateTaskInventoryItemMessage is request-only");
+    }
+
 
     /// <summary>
     /// Metadata POSTed to the SendPostcard capability. This is the first step of a two-phase

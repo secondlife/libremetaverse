@@ -157,6 +157,9 @@ namespace LibreMetaverse
         /// <summary>Combined flags from <see cref="InventoryItemFlags"/></summary>
         [Key("Flags")]
         public uint Flags { get; set; }
+        /// <summary>VM runtime for scripts (e.g. "lsl2", "mono", "luau"), from the task inventory response's metadata; null if not a script or not provided</summary>
+        [Key("Runtime")]
+        public string? Runtime { get; set; }
 
         /// <summary>Time and date the inventory item was created, stored as
         /// UTC (Coordinated Universal Time)</summary>
@@ -269,6 +272,9 @@ namespace LibreMetaverse
                 "inv_type": "script",
                 "item_id": "806baac6-64cd-daae-efff-627208ed1d2b",
                 "metadata": {
+                    "script": {
+                        "runtime": "luau"
+                    }
                 },
                 "name": "New Script",
                 "parent_id": "74a61033-366a-0b89-4d4b-649c5b0de2ad",
@@ -324,6 +330,10 @@ namespace LibreMetaverse
             item.AssetType = assetType;
             item.CreationDate = Utils.UnixTimeToDateTime(descItem["created_at"]);
             item.Flags = descItem["flags"];
+            if (descItem["metadata"] is OSDMap meta && meta["script"] is OSDMap scriptMeta && scriptMeta.TryGetValue("runtime", out var runtime))
+            {
+                item.Runtime = runtime.AsString();
+            }
 
             OSDMap perms = (OSDMap)descItem["permissions"];
             item.OwnerID = perms["owner_id"];

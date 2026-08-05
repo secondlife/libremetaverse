@@ -159,6 +159,7 @@ namespace LibreMetaverse
             "ChatSessionRequest",
             "CopyInventoryFromNotecard",
             "CreateInventoryCategory",
+            "CreateTaskInventoryItem",
             "DeclineFriendship",
             "DeclineGroupInvite",
             "DispatchRegionInfo",

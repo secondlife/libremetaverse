@@ -71,7 +71,7 @@ namespace TestClient.Commands.Inventory
 
                 using var uploadCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 var (uploadSuccess, _, compileSuccess, _, itemId, assetId) = await Client.Inventory
-                    .RequestUpdateScriptAgentInventoryAsync(Encoding.UTF8.GetBytes(body), createdItem.UUID, true, uploadCts.Token).ConfigureAwait(false);
+                    .RequestUpdateScriptAgentInventoryAsync(Encoding.UTF8.GetBytes(body), createdItem.UUID, InventoryManager.ScriptTarget.Mono, uploadCts.Token).ConfigureAwait(false);
 
                 var log = $"Filename: {file}";
                 log += uploadSuccess ? $" Script successfully uploaded, ItemID {itemId} AssetID {assetId}" : $" Script failed to upload, ItemID {itemId}";
