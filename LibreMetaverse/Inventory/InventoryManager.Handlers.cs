@@ -44,6 +44,11 @@ namespace LibreMetaverse
             var result = await Client.HttpCapsClient.PostAsync(uri, OSDFormat.Xml, payload, cancellationToken, progress).ConfigureAwait(false);
             var responseData = result.data ?? throw new InvalidOperationException("Empty response from capability POST");
 
+            if (result.response.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                throw new System.Net.Http.HttpRequestException($"{result.response.StatusCode}({(int)result.response.StatusCode}): {System.Text.Encoding.UTF8.GetString(responseData)}");
+            }
+
             try { return OSDParser.Deserialize(responseData); }
             catch (Exception ex) { throw new InvalidOperationException($"Failed to parse capability response: {ex.Message}", ex); }
         }
