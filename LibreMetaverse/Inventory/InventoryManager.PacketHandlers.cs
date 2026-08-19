@@ -288,8 +288,8 @@ namespace LibreMetaverse
 
                             Logger.Info($"Received an item through UpdateCreateInventoryItem with no parent folder, assigning to folder {item.ParentUUID}");
 
-                            // send update to the sim
-                            RequestUpdateItem(item);
+                            // send update to the sim, the SL viewer does not use AIS, so skip it here
+                            MoveItem(item.UUID, item.ParentUUID, "", default, true);
                         }
 
                         // Update the local copy
@@ -366,6 +366,31 @@ namespace LibreMetaverse
                 _Store.UpdateNodeFor(item);
 
                 Logger.DebugLog($"MoveInventoryItemHandler: moved {item.UUID} (\"{item.Name}\") from {oldParent} to {data.FolderID}", Client);
+            }
+        }
+
+        /// <summary>Process an incoming packet and raise the appropriate events</summary>
+        /// <param name="sender">The sender</param>
+        /// <param name="e">The EventArgs object containing the packet data</param>
+        protected void RemoveInventoryItemHandler(object? sender, PacketReceivedEventArgs e)
+        {
+            var packet = e.Packet;
+
+            var remove = (RemoveInventoryItemPacket)packet;
+
+            if (_Store is null) return;
+
+            // Multiple items may share ancestors, so remove them all under a single write lock
+            using (_storeLock.WriteLock())
+            {
+                foreach (var data in remove.InventoryData)
+                {
+                    if (!_Store.TryGetNodeFor(data.ItemID, out var node)) continue;
+
+                    _Store.RemoveNodeFor(node.Data!);
+
+                    Logger.DebugLog($"RemoveInventoryItemHandler: removed {data.ItemID}", Client);
+                }
             }
         }
 

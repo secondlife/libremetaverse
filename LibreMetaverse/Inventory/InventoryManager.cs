@@ -98,6 +98,7 @@ namespace LibreMetaverse
             Client.Network.RegisterCallback(PacketType.BulkUpdateInventory, BulkUpdateInventoryHandler);
             Client.Network.RegisterEventCallback("BulkUpdateInventory", BulkUpdateInventoryCapHandler);
             Client.Network.RegisterCallback(PacketType.MoveInventoryItem, MoveInventoryItemHandler);
+            Client.Network.RegisterCallback(PacketType.RemoveInventoryItem, RemoveInventoryItemHandler);
             Client.Network.RegisterCallback(PacketType.ReplyTaskInventory, ReplyTaskInventoryHandler);
             Client.Network.RegisterEventCallback("ScriptRunningReply", ScriptRunningReplyMessageHandler);
 
@@ -142,6 +143,7 @@ namespace LibreMetaverse
                         try { Client.Network.UnregisterCallback(PacketType.BulkUpdateInventory, BulkUpdateInventoryHandler); } catch (Exception ex) { Logger.Debug("Failed to unregister BulkUpdateInventory callback", ex, Client); }
                         try { Client.Network.UnregisterEventCallback("BulkUpdateInventory", BulkUpdateInventoryCapHandler); } catch (Exception ex) { Logger.Debug("Failed to unregister BulkUpdateInventory event callback", ex, Client); }
                         try { Client.Network.UnregisterCallback(PacketType.MoveInventoryItem, MoveInventoryItemHandler); } catch (Exception ex) { Logger.Debug("Failed to unregister MoveInventoryItem callback", ex, Client); }
+                        try { Client.Network.UnregisterCallback(PacketType.RemoveInventoryItem, RemoveInventoryItemHandler); } catch (Exception ex) { Logger.Debug("Failed to unregister RemoveInventoryItem callback", ex, Client); }
                         try { Client.Network.UnregisterCallback(PacketType.ReplyTaskInventory, ReplyTaskInventoryHandler); } catch (Exception ex) { Logger.Debug("Failed to unregister ReplyTaskInventory callback", ex, Client); }
                         try { Client.Network.UnregisterEventCallback("ScriptRunningReply", ScriptRunningReplyMessageHandler); } catch (Exception ex) { Logger.Debug("Failed to unregister ScriptRunningReply event callback", ex, Client); }
 
@@ -928,7 +930,7 @@ namespace LibreMetaverse
         /// <param name="folderID">The <see cref="UUID"/> of the destination folder</param>
         /// <param name="newName">Optional new name for the item</param>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
-        public void MoveItem(UUID itemID, UUID folderID, string newName, CancellationToken cancellationToken = default)
+        public void MoveItem(UUID itemID, UUID folderID, string newName, CancellationToken cancellationToken = default, bool skip_ais = false)
         {
             // Update local store under write lock
             try
@@ -950,7 +952,7 @@ namespace LibreMetaverse
 
             // AIS3 supports move-only; fall through to UDP when a rename is also requested
             // (renaming on move is deprecated per the [Obsolete] on Move(item, parent, name))
-            if (string.IsNullOrEmpty(newName) && Client.AisClient.IsAvailable)
+            if (string.IsNullOrEmpty(newName) && Client.AisClient.IsAvailable && !skip_ais)
             {
                 _ = Client.AisClient.MoveItemAsync(itemID, folderID, cancellationToken);
                 return;
