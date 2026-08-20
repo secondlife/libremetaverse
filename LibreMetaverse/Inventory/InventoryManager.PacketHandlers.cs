@@ -289,7 +289,7 @@ namespace LibreMetaverse
                             Logger.Info($"Received an item through UpdateCreateInventoryItem with no parent folder, assigning to folder {item.ParentUUID}");
 
                             // send update to the sim, the SL viewer does not use AIS, so skip it here
-                            MoveItem(item.UUID, item.ParentUUID, "", default, true);
+                            MoveItem(item.UUID, item.ParentUUID, "", skip_ais: true);
                         }
 
                         // Update the local copy

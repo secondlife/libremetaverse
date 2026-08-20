@@ -924,12 +924,25 @@ namespace LibreMetaverse
         }
 
         /// <summary>
+        /// Move an inventory item to a new folder (convenience overload)
+        /// </summary>
+        /// <param name="itemID">The <see cref="UUID"/> of the source item to move</param>
+        /// <param name="folderID">The <see cref="UUID"/> of the destination folder</param>
+        /// <param name="newName">Optional new name for the item</param>
+        /// <param name="cancellationToken">Cancellation token for the operation</param>
+        public void MoveItem(UUID itemID, UUID folderID, string newName, CancellationToken cancellationToken = default)
+        {
+            MoveItem(itemID, folderID, newName, cancellationToken);
+        }
+
+        /// <summary>
         /// Move and optionally rename an inventory item
         /// </summary>
         /// <param name="itemID">The <see cref="UUID"/> of the source item to move</param>
         /// <param name="folderID">The <see cref="UUID"/> of the destination folder</param>
         /// <param name="newName">Optional new name for the item</param>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
+        /// <param name="skip_ais">If true, does not attempt to use AIS for the move"</param>
         public void MoveItem(UUID itemID, UUID folderID, string newName, CancellationToken cancellationToken = default, bool skip_ais = false)
         {
             // Update local store under write lock
