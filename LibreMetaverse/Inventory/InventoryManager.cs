@@ -920,7 +920,7 @@ namespace LibreMetaverse
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         public void MoveItem(UUID itemID, UUID folderID, CancellationToken cancellationToken = default)
         {
-            MoveItem(itemID, folderID, string.Empty, cancellationToken);
+            MoveItem(itemID, folderID, string.Empty, cancellationToken, skip_ais: false);
         }
 
         /// <summary>
@@ -932,7 +932,7 @@ namespace LibreMetaverse
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         public void MoveItem(UUID itemID, UUID folderID, string newName, CancellationToken cancellationToken = default)
         {
-            MoveItem(itemID, folderID, newName, cancellationToken);
+            MoveItem(itemID, folderID, newName, cancellationToken, skip_ais: false);
         }
 
         /// <summary>
