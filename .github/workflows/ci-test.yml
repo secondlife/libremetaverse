@@ -8,6 +8,36 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  security-audit:
+    name: NuGet vulnerability audit
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore LibreMetaverse.sln
+
+      - name: Check for known-vulnerable packages
+        shell: bash
+        run: |
+          # --include-transitive on purpose: several dependencies here (e.g. the
+          # SIPSorceryMedia.SDL3 family) are this project's own packages, so a vulnerability
+          # anywhere in the resolved graph is still actionable, not just in top-level references.
+          output=$(dotnet list LibreMetaverse.sln package --vulnerable --include-transitive 2>&1)
+          echo "$output"
+          if echo "$output" | grep -q "has the following vulnerable packages"; then
+            echo "::error::One or more resolved NuGet packages have known vulnerabilities. See the log above for affected projects/frameworks and advisory URLs."
+            exit 1
+          fi
+
   test:
     name: Test matrix
     runs-on: ${{ matrix.os }}
@@ -22,10 +52,10 @@ jobs:
         dotnet: [ '8.0.x', '9.0.x', '10.0.x' ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ matrix.dotnet }}
 
@@ -65,7 +95,7 @@ jobs:
 
       - name: Publish test results (annotations)
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Tests
           reporter: dotnet-trx
@@ -74,7 +104,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.os }}-dotnet-${{ matrix.dotnet }}
           path: |
@@ -89,10 +119,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -119,10 +149,10 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -140,7 +170,7 @@ jobs:
 
       - name: Publish net48 test results (annotations)
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Tests (.NET Framework 4.8.1)
           reporter: dotnet-trx
@@ -149,7 +179,7 @@ jobs:
 
       - name: Upload net48 test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-windows-net481
           path: |

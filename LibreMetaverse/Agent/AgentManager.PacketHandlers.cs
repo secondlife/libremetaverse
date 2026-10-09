@@ -742,30 +742,14 @@ namespace LibreMetaverse
 
                                 try
                                 {
-                                    Match m;
-                                    if ((m = Regex.Match(line,
-                                            @"(?<MyteType>\d+)\s+(?<Key>[a-zA-Z0-9-]+)\s+(?<Name>[^|]+)|(?<Flags>.+)",
-                                            RegexOptions.CultureInvariant)).Success)
-                                    {
-                                        MuteEntry me = new MuteEntry
-                                        {
-                                            Type = (MuteType)int.Parse(m.Groups["MyteType"].Value),
-                                            ID = new UUID(m.Groups["Key"].Value),
-                                            Name = m.Groups["Name"].Value
-                                        };
-                                        int flags = 0;
-                                        int.TryParse(m.Groups["Flags"].Value, out flags);
-                                        me.Flags = (MuteFlags)flags;
-                                        MuteList[$"{me.ID}|{me.Name}"] = me;
-                                    }
-                                    else
-                                    {
-                                        throw new ArgumentException("Invalid mutelist entry line");
-                                    }
+                                    MuteEntry me = ParseMuteListEntry(line);
+                                    MuteList[$"{me.ID}|{me.Name}"] = me;
                                 }
                                 catch (Exception ex)
                                 {
-                                    Logger.Warn("Failed to parse the mute list line: " + line, ex, Client);
+                                    // the line is from the network, so do not log all of an arbitrarily long one
+                                    Logger.Warn("Failed to parse the mute list line: " +
+                                                (line.Length > 200 ? line.Substring(0, 200) + "..." : line), ex, Client);
                                 }
                             }
                         }
@@ -1186,6 +1170,34 @@ namespace LibreMetaverse
                         sessionMembers[found] = update_member;
                 }
             }
+        }
+
+        // One mute list line looks like "<type> <uuid> <name>|<flags>". The name may contain spaces
+        // and the flags are optional. Anchored, with bounded numbers, so a long line of digits cannot make
+        // the match retry from every position (that is quadratic in the length of the line).
+        private static readonly Regex MuteListEntryRegex = new Regex(
+            @"^\s*(?<MuteType>\d{1,9})\s+(?<Key>[a-zA-Z0-9-]{1,36})\s+(?<Name>[^|]+)(?:\|(?<Flags>\d{1,9}))?",
+            RegexOptions.CultureInvariant);
+
+        /// <summary>Parse a single line of the mute list asset</summary>
+        /// <exception cref="ArgumentException">The line is not a mute list entry</exception>
+        internal static MuteEntry ParseMuteListEntry(string line)
+        {
+            var m = MuteListEntryRegex.Match(line);
+            if (!m.Success)
+            {
+                throw new ArgumentException("Invalid mutelist entry line");
+            }
+
+            int.TryParse(m.Groups["Flags"].Value, out var flags);
+
+            return new MuteEntry
+            {
+                Type = (MuteType)int.Parse(m.Groups["MuteType"].Value),
+                ID = new UUID(m.Groups["Key"].Value),
+                Name = m.Groups["Name"].Value,
+                Flags = (MuteFlags)flags
+            };
         }
 
         /// <summary>

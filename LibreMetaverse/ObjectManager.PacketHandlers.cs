@@ -343,6 +343,7 @@ namespace LibreMetaverse
 
                         // Textures, texture animations, particle system, and extra params
                         prim.Textures = objectupdate.Textures;
+                        ApplyCachedGLTFMaterialOverride(simulator, prim);
 
                         prim.TextureAnim = new Primitive.TextureAnimation(block.TextureAnim, 0);
                         prim.ParticleSys = new Primitive.ParticleSystem(block.PSBlock, 0);
@@ -606,7 +607,11 @@ namespace LibreMetaverse
                     pos += 6;
 
                     // Textures
-                    // FIXME: Why are we ignoring the first four bytes here?
+                    // Unlike ObjectUpdate's TextureEntry block (parsed from offset 0), a terse
+                    // update's TextureEntry field carries 4 leading bytes before the actual
+                    // TextureEntry data. This offset is original to the wire parsing and has been
+                    // unchanged since it was first written; texture updates via terse packets have
+                    // worked correctly with it in practice.
                     if (block.TextureEntry.Length != 0)
                         update.Textures = new Primitive.TextureEntry(block.TextureEntry, 4, block.TextureEntry.Length - 4);
 
@@ -645,7 +650,10 @@ namespace LibreMetaverse
                         obj.AngularVelocity = update.AngularVelocity;
                         obj.PrimData.State = update.State;
                         if (update.Textures is not null)
+                        {
                             obj.Textures = update.Textures;
+                            ApplyCachedGLTFMaterialOverride(simulator, obj);
+                        }
                     }
 
                 }
@@ -884,6 +892,7 @@ namespace LibreMetaverse
                     var textureEntryLength = (int)Utils.BytesToUInt(block.Data, i);
                     i += 4;
                     prim.Textures = new Primitive.TextureEntry(block.Data, i, textureEntryLength);
+                    ApplyCachedGLTFMaterialOverride(simulator, prim);
                     i += textureEntryLength;
 
                     // Texture animation
@@ -1041,6 +1050,18 @@ namespace LibreMetaverse
             foreach (var removeID in removePrims)
             {
                 simulator.ObjectsPrimitives.TryRemove(removeID, out _);
+            }
+
+            // Local IDs are reused by the simulator, so a stale override must not be handed to
+            // whatever object gets this local ID next. Evict by the killed local IDs directly
+            // (not removePrims, which only covers IDs that were already tracked) since an override
+            // can be cached for an object that was never tracked -- e.g. the override arrived and
+            // the object was killed before any ObjectUpdate for it ever landed. Mirrors the
+            // reference viewer erasing its own GLTF override cache entry on object removal
+            // (LLViewerRegion, llviewerregion.cpp).
+            foreach (var killedID in localIdsToKill)
+            {
+                simulator.GLTFMaterialOverrides.TryRemove(killedID, out _);
             }
         }
 

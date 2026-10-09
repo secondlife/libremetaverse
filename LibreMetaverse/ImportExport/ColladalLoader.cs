@@ -31,10 +31,12 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Xml;
 using System.Linq;
 using System.Xml.Serialization;
 using CoreJ2K.Configuration;
+using CoreJ2K.Util;
 using LibreMetaverse.Imaging;
 using LibreMetaverse.ImportExport.Collada14;
 using LibreMetaverse.Rendering;
@@ -46,6 +48,16 @@ namespace LibreMetaverse.ImportExport
     /// </summary>
     public class ColladaLoader
     {
+        static ColladaLoader()
+        {
+            // LoadImage's J2C encode requires ManagedImage to be registered with CoreJ2K's
+            // ImageFactory. AssetTexture registers it too, but nothing guarantees that type has
+            // been touched yet in a process that only uses ColladaLoader (e.g. a standalone
+            // model-upload tool), so register it here as well -- redundant, not conflicting, if
+            // AssetTexture already has.
+            ImageFactory.Register(new ManagedImageCreator());
+        }
+
         private COLLADA? Model;
         private static XmlSerializer? Serializer = null;
         private List<Node> Nodes = new List<Node>();
@@ -53,6 +65,14 @@ namespace LibreMetaverse.ImportExport
         private Dictionary<string, string> MatSymTarget = new Dictionary<string, string>();
         private string FileName = string.Empty;
         private readonly ITextureCodec? _textureCodec;
+
+        /// <summary>
+        /// Only load textures from the directory of the model file and its subdirectories. A model
+        /// file can name any path, so without this an untrusted model can make the loader read
+        /// (and a caller upload) image files from anywhere the user can read. Set to false for
+        /// models that keep their textures elsewhere, such as in a sibling directory.
+        /// </summary>
+        public bool RestrictTexturesToModelDirectory { get; set; } = true;
 
         /// <summary>
         /// Creates a new Collada loader
@@ -95,18 +115,19 @@ namespace LibreMetaverse.ImportExport
                 this.FileName = filename;
 
                 // A FileStream is needed to read the XML document.
-                FileStream fs = new FileStream(filename, FileMode.Open);
-                XmlReader reader = XmlReader.Create(fs);
+                object? des;
+                using (var fs = new FileStream(filename, FileMode.Open))
+                using (var reader = XmlReader.Create(fs))
+                {
 #pragma warning disable IL3050
-                var des = Serializer.Deserialize(reader);
+                    des = Serializer.Deserialize(reader);
 #pragma warning restore IL3050
+                }
                 Model = des as COLLADA;
                 if (Model == null)
                 {
-                    fs.Close();
                     throw new InvalidOperationException("Failed to deserialize COLLADA document");
                 }
-                fs.Close();
                 var prims = Parse();
                 if (loadImages)
                 {
@@ -135,9 +156,40 @@ namespace LibreMetaverse.ImportExport
             }
         }
 
+        private bool IsInModelDirectory(string path)
+        {
+            try
+            {
+                string root = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(FileName)) ?? string.Empty;
+                if (!root.EndsWith(System.IO.Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+                    && !root.EndsWith(System.IO.Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+                {
+                    root += System.IO.Path.DirectorySeparatorChar;
+                }
+
+                // GetFullPath collapses any ".." segments, so they cannot be used to climb out
+                string full = System.IO.Path.GetFullPath(path);
+                var comparison = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal;
+                return full.StartsWith(root, comparison);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is System.IO.PathTooLongException)
+            {
+                return false;
+            }
+        }
+
         private void LoadImage(ModelMaterial material)
         {
             var fname = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(FileName) ?? string.Empty, material.Texture);
+
+            if (RestrictTexturesToModelDirectory && !IsInModelDirectory(fname))
+            {
+                Logger.Warn($"Not loading texture {material.Texture}: it is outside the model's directory " +
+                            "(see ColladaLoader.RestrictTexturesToModelDirectory)");
+                return;
+            }
 
             try
             {
@@ -191,6 +243,8 @@ namespace LibreMetaverse.ImportExport
                     image.ResizeBilinear(width, height);
                 }
 
+                material.Width = width;
+                material.Height = height;
                 material.TextureData = CompleteConfigurationPresets.Streaming.WithFileFormat(false).Encode(image);
 
                 Logger.Info($"Successfully encoded {fname}");

@@ -458,6 +458,17 @@ namespace LibreMetaverse
         /// </summary>
         public ConcurrentDictionary<UUID, uint> GlobalToLocalID = new ConcurrentDictionary<UUID, uint>();
 
+        /// <summary>
+        /// A thread-safe cache of the most recently received GLTF material override for each
+        /// object local ID in this simulator, keyed by local ID. Populated from
+        /// <see cref="GenericStreamingMethod.GltfMaterialOverride"/> messages regardless of whether
+        /// the object is currently tracked, so an override that arrives before the object's own
+        /// update can still be applied once <see cref="ObjectsPrimitives"/> catches up. Mirrors
+        /// LLViewerRegion's per-region GLTF override cache in the reference viewer.
+        /// </summary>
+        public ConcurrentDictionary<uint, GLTFMaterialOverrideCacheEntry> GLTFMaterialOverrides =
+            new ConcurrentDictionary<uint, GLTFMaterialOverrideCacheEntry>();
+
         public readonly TerrainPatch[] Terrain = Array.Empty<TerrainPatch>();
 
         public readonly Vector2[]? WindSpeeds;
@@ -1481,9 +1492,12 @@ namespace LibreMetaverse
                 {
                     packet = Packet.BuildPacket(buffer.Data, ref packetEnd, zeroBuffer);
                 }
-                catch (MalformedDataException)
+                catch (MalformedDataException ex)
                 {
-                    Logger.Error($"Malformed data, cannot parse packet:\n{Utils.BytesToHexString(buffer.Data, buffer.DataLength, null)}");
+                    // Anyone who can send us UDP can cause this, so keep what is logged for each one short
+                    int dumpLen = Math.Min(buffer.DataLength, 64);
+                    Logger.Error($"Malformed data, cannot parse {buffer.DataLength} byte packet: {ex.Message}\n" +
+                                 $"First {dumpLen} bytes: {Utils.BytesToHexString(buffer.Data, dumpLen, null)}");
                 }
                 finally
                 {

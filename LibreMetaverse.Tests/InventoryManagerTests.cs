@@ -26,6 +26,8 @@
 
 using NUnit.Framework;
 using System;
+using System.Collections;
+using System.Reflection;
 
 namespace LibreMetaverse.Tests
 {
@@ -89,6 +91,88 @@ namespace LibreMetaverse.Tests
                 Assert.That(notecard, Is.InstanceOf<InventoryNotecard>());
                 Assert.That(unknown, Is.InstanceOf<InventoryItem>());
             }
+        }
+
+        [TestCase(23, "Widget", "widget")]
+        [TestCase(24, "Person", "person")]
+        [TestCase(25, "Settings", "settings")]
+        [TestCase(26, "Material", "material")]
+        [TestCase(27, "GLTF", "gltf")]
+        [TestCase(28, "GLTFBin", "glbin")]
+        public void InventoryTypeCanonicalTail_HasExpectedWireValueAndName(int value, string enumName, string wireName)
+        {
+            var inventoryType = (InventoryType)value;
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Enum.GetName(typeof(InventoryType), inventoryType), Is.EqualTo(enumName));
+                Assert.That(Utils.InventoryTypeToString(inventoryType), Is.EqualTo(wireName));
+                Assert.That(Utils.StringToInventoryType(wireName), Is.EqualTo(inventoryType));
+            }
+        }
+
+        [Test]
+        public void CreateInventoryItem_MaterialWireValue_ReturnsMaterial()
+        {
+            var item = InventoryManager.CreateInventoryItem((InventoryType)26, UUID.Random());
+
+            Assert.That(item, Is.InstanceOf<InventoryMaterial>());
+        }
+
+        [TestCase(25, 10, 25)]
+        [TestCase(0, 10, 0)]
+        [TestCase(null, 10, 10)]
+        public void GetUploadCostForAssetType_TextureUsesPresentBenefitOrBaseFallback(
+            int? textureUploadCost, int baseUploadCost, int expected)
+        {
+            var actual = GetUploadCostForAssetType(
+                AssetType.Texture, "texture_upload_cost", textureUploadCost, baseUploadCost);
+
+            Assert.That(actual, Is.EqualTo(expected));
+        }
+
+        [TestCase(AssetType.Animation, "animation_upload_cost", 7, 7)]
+        [TestCase(AssetType.Animation, "animation_upload_cost", 0, 0)]
+        [TestCase(AssetType.Animation, "animation_upload_cost", null, 10)]
+        [TestCase(AssetType.Sound, "sound_upload_cost", 8, 8)]
+        [TestCase(AssetType.Sound, "sound_upload_cost", 0, 0)]
+        [TestCase(AssetType.Sound, "sound_upload_cost", null, 10)]
+        [TestCase(AssetType.Object, "mesh_upload_cost", 9, 9)]
+        [TestCase(AssetType.Object, "mesh_upload_cost", 0, 0)]
+        [TestCase(AssetType.Object, "mesh_upload_cost", null, 10)]
+        public void GetUploadCostForAssetType_NonTextureBenefit_UsesPresentBenefitOrBaseFallback(
+            AssetType assetType, string benefitKey, int? benefitCost, int expected)
+        {
+            // A present benefit cost of 0 (e.g. a free-upload account tier) must be declared as
+            // 0, not silently replaced by Settings.UploadCost -- the same class of bug fixed for
+            // Texture in GetUploadCostForAssetType_TextureUsesPresentBenefitOrBaseFallback, which
+            // applies equally here since all four benefit costs share the same -1-when-absent
+            // wire contract (see AccountLevelBenefits). Declaring a fee the simulator won't
+            // actually charge causes the real upload request to be rejected.
+            var actual = GetUploadCostForAssetType(assetType, benefitKey, benefitCost, 10);
+
+            Assert.That(actual, Is.EqualTo(expected));
+        }
+
+        private static int GetUploadCostForAssetType(
+            AssetType assetType, string benefitKey, int? benefitCost, int baseUploadCost)
+        {
+            var client = new GridClient();
+            client.Settings.UploadCost = baseUploadCost;
+
+            var values = new Hashtable();
+            if (benefitCost.HasValue)
+                values[benefitKey] = benefitCost.Value;
+
+            var benefitsProperty = typeof(AgentManager).GetProperty(nameof(AgentManager.Benefits));
+            Assert.That(benefitsProperty, Is.Not.Null);
+            benefitsProperty!.SetValue(client.Self, new AccountLevelBenefits(values));
+
+            var method = typeof(InventoryManager).GetMethod(
+                "GetUploadCostForAssetType", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+
+            return (int)method!.Invoke(client.Inventory, new object[] { assetType })!;
         }
     }
 }

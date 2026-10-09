@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -40,7 +40,7 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -50,7 +50,7 @@ jobs:
 
       - name: Build
         shell: pwsh
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release --no-restore /p:Version="${{ steps.version.outputs.version }}"
 
       - name: Test
         shell: pwsh
@@ -60,7 +60,7 @@ jobs:
 
       - name: Publish test results (annotations)
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Tests
           reporter: dotnet-trx
@@ -70,7 +70,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: |
@@ -123,18 +123,25 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $packages = Get-ChildItem -Path ./artifacts\* -Include *.nupkg,*.snupkg -File -ErrorAction SilentlyContinue
-          if ($packages) {
-            foreach ($p in $packages) {
-              $pkg = $p.FullName
-              Write-Host "Publishing $pkg to nuget.org"
-              try {
-                dotnet nuget push $pkg --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
-              } catch {
-                Write-Host "Failed to push ${pkg}: $($_)"
-              }
+          if (-not $packages) {
+            Write-Host "::error::No packages found to publish"
+            exit 1
+          }
+
+          $failed = @()
+          foreach ($p in $packages) {
+            $pkg = $p.FullName
+            Write-Host "Publishing $pkg to nuget.org"
+            dotnet nuget push $pkg --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::Failed to push $pkg (exit code $LASTEXITCODE)"
+              $failed += $pkg
             }
-          } else {
-            Write-Host "No packages to publish"
+          }
+
+          if ($failed.Count -gt 0) {
+            Write-Host "::error::$($failed.Count) package(s) failed to publish: $($failed -join ', ')"
+            exit 1
           }
 
       - name: Generate release notes
@@ -153,14 +160,18 @@ jobs:
           "# Release $CURRENT_TAG" | Out-File -FilePath $NOTES_FILE -Encoding utf8
           "" | Out-File -FilePath $NOTES_FILE -Append
 
+          # Diff against HEAD, not $CURRENT_TAG -- on a workflow_dispatch run the tag doesn't exist
+          # yet (it's created later by the release-creation step), so $CURRENT_TAG wouldn't resolve
+          # as a git ref. HEAD is always valid and, on both trigger paths, points at exactly the
+          # commit this release is being cut from.
           if ($PREV_TAG) {
             "## Changes since $PREV_TAG" | Out-File -FilePath $NOTES_FILE -Append
             "" | Out-File -FilePath $NOTES_FILE -Append
-            git log --no-merges --pretty=format:'- %s (%an)' "$PREV_TAG..$CURRENT_TAG" | Out-File -FilePath $NOTES_FILE -Append
+            git log --no-merges --pretty=format:'- %s (%an)' "$PREV_TAG..HEAD" | Out-File -FilePath $NOTES_FILE -Append
           } else {
             "## Changes" | Out-File -FilePath $NOTES_FILE -Append
             "" | Out-File -FilePath $NOTES_FILE -Append
-            git log --no-merges --pretty=format:'- %s (%an)' "$CURRENT_TAG" | Out-File -FilePath $NOTES_FILE -Append
+            git log --no-merges --pretty=format:'- %s (%an)' "HEAD" | Out-File -FilePath $NOTES_FILE -Append
           }
 
           "" | Out-File -FilePath $NOTES_FILE -Append

@@ -2023,48 +2023,63 @@ namespace LibreMetaverse
         {
             Packet packet = e.Packet;
             GroupMembersReplyPacket members = (GroupMembersReplyPacket)packet;
-            Dictionary<UUID, GroupMember>? groupMemberCache = null;
+            Dictionary<UUID, GroupMember>? completedCache = null;
 
             // If nothing is registered to receive this RequestID drop the data
             if (GroupMembersRequests.ContainsKey(members.GroupData.RequestID))
             {
-                groupMemberCache = TempGroupMembers.GetOrAdd(members.GroupData.RequestID, _ => new Dictionary<UUID, GroupMember>());
+                var groupMemberCache = TempGroupMembers.GetOrAdd(members.GroupData.RequestID, _ => new Dictionary<UUID, GroupMember>());
 
-                foreach (GroupMembersReplyPacket.MemberDataBlock block in members.MemberData)
+                // Replies for the same request can be handled concurrently, so merging the
+                // block and deciding whether the request is complete has to be atomic
+                lock (groupMemberCache)
                 {
-                    GroupMember groupMember = new GroupMember
+                    // A concurrent reply may have completed the request while we waited for the lock
+                    if (!GroupMembersRequests.ContainsKey(members.GroupData.RequestID))
                     {
-                        ID = block.AgentID,
-                        Contribution = block.Contribution,
-                        IsOwner = block.IsOwner,
-                        OnlineStatus = Utils.BytesToString(block.OnlineStatus),
-                        Powers = (GroupPowers) block.AgentPowers,
-                        Title = Utils.BytesToString(block.Title)
-                    };
+                        TempGroupMembers.TryRemove(members.GroupData.RequestID, out _);
+                        return;
+                    }
 
-                    groupMemberCache[block.AgentID] = groupMember;
-                }
+                    foreach (GroupMembersReplyPacket.MemberDataBlock block in members.MemberData)
+                    {
+                        GroupMember groupMember = new GroupMember
+                        {
+                            ID = block.AgentID,
+                            Contribution = block.Contribution,
+                            IsOwner = block.IsOwner,
+                            OnlineStatus = Utils.BytesToString(block.OnlineStatus),
+                            Powers = (GroupPowers) block.AgentPowers,
+                            Title = Utils.BytesToString(block.Title)
+                        };
 
-                if (groupMemberCache.Count >= members.GroupData.MemberCount)
-                {
-                    byte ignored;
-                    GroupMembersRequests.TryRemove(members.GroupData.RequestID, out ignored);
-                    Dictionary<UUID, GroupMember>? removed;
-                    TempGroupMembers.TryRemove(members.GroupData.RequestID, out removed);
+                        groupMemberCache[block.AgentID] = groupMember;
+                    }
+
+                    if (groupMemberCache.Count >= members.GroupData.MemberCount)
+                    {
+                        GroupMembersRequests.TryRemove(members.GroupData.RequestID, out _);
+                        TempGroupMembers.TryRemove(members.GroupData.RequestID, out _);
+                        completedCache = groupMemberCache;
+                    }
                 }
             }
 
-            if (m_GroupMembers != null && groupMemberCache != null && groupMemberCache.Count >= members.GroupData.MemberCount)
+            // Only the reply that completed the request gets here with a cache, so the event fires once
+            if (m_GroupMembers != null && completedCache != null)
             {
-                OnGroupMembersReply(new GroupMembersReplyEventArgs(members.GroupData.RequestID, members.GroupData.GroupID, groupMemberCache));
+                OnGroupMembersReply(new GroupMembersReplyEventArgs(members.GroupData.RequestID, members.GroupData.GroupID, completedCache));
             }
         }
 
         protected void GroupMembersHandlerCaps(UUID requestID, OSD result)
         {
+            UUID groupID = UUID.Zero;
+            GroupMembersReplyEventArgs reply;
             try
             {
                 OSDMap res = (OSDMap)result;
+                groupID = res["group_id"];
                 int memberCount = res["member_count"];
                 OSDArray titlesOSD = (OSDArray)res["titles"];
                 string[] titles = new string[titlesOSD.Count];
@@ -2072,7 +2087,6 @@ namespace LibreMetaverse
                 {
                     titles[i] = titlesOSD[i];
                 }
-                UUID groupID = res["group_id"];
                 GroupPowers defaultPowers = (GroupPowers)(ulong)((OSDMap)res["defaults"])["default_powers"];
                 OSDMap membersOSD = (OSDMap)res["members"];
                 Dictionary<UUID, GroupMember> groupMembers = new Dictionary<UUID, GroupMember>(membersOSD.Count);
@@ -2097,12 +2111,15 @@ namespace LibreMetaverse
                     groupMembers[groupMember.ID] = groupMember;
                 }
 
-                OnGroupMembersReply(new GroupMembersReplyEventArgs(requestID, groupID, groupMembers));
+                reply = new GroupMembersReplyEventArgs(requestID, groupID, groupMembers);
             }
             catch (Exception ex)
             {
                 Logger.Error("Failed to decode result of GroupMemberData capability: ", ex, Client);
+                reply = new GroupMembersReplyEventArgs(requestID, groupID, new Dictionary<UUID, GroupMember>(), false);
             }
+
+            OnGroupMembersReply(reply);
         }
 
         /// <summary>Process an incoming packet and raise the appropriate events</summary>
@@ -2112,41 +2129,50 @@ namespace LibreMetaverse
         {
             Packet packet = e.Packet;
             GroupRoleDataReplyPacket roles = (GroupRoleDataReplyPacket)packet;
-            Dictionary<UUID, GroupRole>? groupRoleCache = null;
+            Dictionary<UUID, GroupRole>? completedCache = null;
 
             // If nothing is registered to receive this RequestID drop the data
             if (GroupRolesRequests.ContainsKey(roles.GroupData.RequestID))
             {
-                groupRoleCache = TempGroupRoles.GetOrAdd(roles.GroupData.RequestID, _ => new Dictionary<UUID, GroupRole>());
+                var groupRoleCache = TempGroupRoles.GetOrAdd(roles.GroupData.RequestID, _ => new Dictionary<UUID, GroupRole>());
 
-                foreach (GroupRoleDataReplyPacket.RoleDataBlock block in roles.RoleData)
+                // See GroupMembersHandler: merge and completion check must be atomic
+                lock (groupRoleCache)
                 {
-                    GroupRole groupRole = new GroupRole
+                    if (!GroupRolesRequests.ContainsKey(roles.GroupData.RequestID))
                     {
-                        GroupID = roles.GroupData.GroupID,
-                        ID = block.RoleID,
-                        Description = Utils.BytesToString(block.Description),
-                        Name = Utils.BytesToString(block.Name),
-                        Powers = (GroupPowers) block.Powers,
-                        Title = Utils.BytesToString(block.Title),
-                        Members = block.Members
-                    };
+                        TempGroupRoles.TryRemove(roles.GroupData.RequestID, out _);
+                        return;
+                    }
 
-                    groupRoleCache[block.RoleID] = groupRole;
-                }
+                    foreach (GroupRoleDataReplyPacket.RoleDataBlock block in roles.RoleData)
+                    {
+                        GroupRole groupRole = new GroupRole
+                        {
+                            GroupID = roles.GroupData.GroupID,
+                            ID = block.RoleID,
+                            Description = Utils.BytesToString(block.Description),
+                            Name = Utils.BytesToString(block.Name),
+                            Powers = (GroupPowers) block.Powers,
+                            Title = Utils.BytesToString(block.Title),
+                            Members = block.Members
+                        };
 
-                if (groupRoleCache.Count >= roles.GroupData.RoleCount)
-                {
-                    byte ignored;
-                    GroupRolesRequests.TryRemove(roles.GroupData.RequestID, out ignored);
-                    Dictionary<UUID, GroupRole>? removed;
-                    TempGroupRoles.TryRemove(roles.GroupData.RequestID, out removed);
+                        groupRoleCache[block.RoleID] = groupRole;
+                    }
+
+                    if (groupRoleCache.Count >= roles.GroupData.RoleCount)
+                    {
+                        GroupRolesRequests.TryRemove(roles.GroupData.RequestID, out _);
+                        TempGroupRoles.TryRemove(roles.GroupData.RequestID, out _);
+                        completedCache = groupRoleCache;
+                    }
                 }
             }
 
-            if (m_GroupRoles != null && groupRoleCache != null && groupRoleCache.Count >= roles.GroupData.RoleCount)
+            if (m_GroupRoles != null && completedCache != null)
             {
-                OnGroupRoleDataReply(new GroupRolesDataReplyEventArgs(roles.GroupData.RequestID, roles.GroupData.GroupID, groupRoleCache));
+                OnGroupRoleDataReply(new GroupRolesDataReplyEventArgs(roles.GroupData.RequestID, roles.GroupData.GroupID, completedCache));
             }
         }
 
@@ -2157,27 +2183,36 @@ namespace LibreMetaverse
         {
             Packet packet = e.Packet;
             GroupRoleMembersReplyPacket members = (GroupRoleMembersReplyPacket)packet;
-            List<KeyValuePair<UUID, UUID>>? groupRoleMemberCache = null;
+            List<KeyValuePair<UUID, UUID>>? completedCache = null;
 
             // If nothing is registered to receive this RequestID drop the data
             if (GroupRolesMembersRequests.ContainsKey(members.AgentData.RequestID))
             {
-                groupRoleMemberCache = TempGroupRolesMembers.GetOrAdd(members.AgentData.RequestID, _ => new List<KeyValuePair<UUID, UUID>>());
-                
-                groupRoleMemberCache.AddRange(members.MemberData.Select(block => new KeyValuePair<UUID, UUID>(block.RoleID, block.MemberID)));
+                var groupRoleMemberCache = TempGroupRolesMembers.GetOrAdd(members.AgentData.RequestID, _ => new List<KeyValuePair<UUID, UUID>>());
 
-                if (groupRoleMemberCache.Count >= members.AgentData.TotalPairs)
+                // See GroupMembersHandler: merge and completion check must be atomic
+                lock (groupRoleMemberCache)
                 {
-                    byte ignored;
-                    GroupRolesMembersRequests.TryRemove(members.AgentData.RequestID, out ignored);
-                    List<KeyValuePair<UUID, UUID>>? removed;
-                    TempGroupRolesMembers.TryRemove(members.AgentData.RequestID, out removed);
+                    if (!GroupRolesMembersRequests.ContainsKey(members.AgentData.RequestID))
+                    {
+                        TempGroupRolesMembers.TryRemove(members.AgentData.RequestID, out _);
+                        return;
+                    }
+
+                    groupRoleMemberCache.AddRange(members.MemberData.Select(block => new KeyValuePair<UUID, UUID>(block.RoleID, block.MemberID)));
+
+                    if (groupRoleMemberCache.Count >= members.AgentData.TotalPairs)
+                    {
+                        GroupRolesMembersRequests.TryRemove(members.AgentData.RequestID, out _);
+                        TempGroupRolesMembers.TryRemove(members.AgentData.RequestID, out _);
+                        completedCache = groupRoleMemberCache;
+                    }
                 }
             }
 
-            if (m_GroupRoleMembers != null && groupRoleMemberCache != null && groupRoleMemberCache.Count >= members.AgentData.TotalPairs)
+            if (m_GroupRoleMembers != null && completedCache != null)
             {
-                OnGroupRoleMembers(new GroupRolesMembersReplyEventArgs(members.AgentData.RequestID, members.AgentData.GroupID, groupRoleMemberCache));
+                OnGroupRoleMembers(new GroupRolesMembersReplyEventArgs(members.AgentData.RequestID, members.AgentData.GroupID, completedCache));
             }
         }
 
@@ -2365,8 +2400,11 @@ namespace LibreMetaverse
         /// <summary>Get the ID of the group</summary>
         public UUID GroupID { get; }
 
-        /// <summary>Get the dictionary of members</summary>
+        /// <summary>Get the dictionary of members; empty when the reply is unsuccessful.</summary>
         public Dictionary<UUID, GroupMember> Members { get; }
+
+        /// <summary>Whether the members were decoded successfully. Failure does not necessarily mean the group does not exist.</summary>
+        public bool Success { get; } = true;
 
         /// <summary>
         /// Construct a new instance of the GroupMembersReplyEventArgs class
@@ -2379,6 +2417,17 @@ namespace LibreMetaverse
             RequestID = requestID;
             GroupID = groupID;
             Members = members;
+        }
+
+        /// <summary>Construct a group members reply with an explicit success status.</summary>
+        /// <param name="requestID">The ID of the request</param>
+        /// <param name="groupID">The group ID from the response, or UUID.Zero if unavailable</param>
+        /// <param name="members">The membership list, or an empty dictionary on failure</param>
+        /// <param name="success">Whether the members were decoded successfully</param>
+        public GroupMembersReplyEventArgs(UUID requestID, UUID groupID, Dictionary<UUID, GroupMember> members, bool success)
+            : this(requestID, groupID, members)
+        {
+            Success = success;
         }
     }
 
@@ -2625,4 +2674,3 @@ namespace LibreMetaverse
 
     #endregion
 }
-
