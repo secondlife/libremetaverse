@@ -969,6 +969,34 @@ namespace LibreMetaverse.Tests
             Assert.That(t.ScriptRunning, Is.EqualTo(s.ScriptRunning));
             Assert.That(t.Target, Is.EqualTo(s.Target));
             Assert.That(t.TaskID, Is.EqualTo(s.TaskID));
+            Assert.That(map.ContainsKey("experience"), Is.False);
+            Assert.That(t.ExperienceID, Is.Null);
+        }
+
+        [Test]
+        public void UpdateScriptTaskMessage_WithExperience()
+        {
+            UUID experience = UUID.Random();
+            UpdateScriptTaskUpdateMessage s = new UpdateScriptTaskUpdateMessage
+            {
+                TaskID = UUID.Random(),
+                Target = "mono",
+                ScriptRunning = true,
+                ItemID = UUID.Random(),
+                ExperienceID = experience
+            };
+
+            OSDMap map = s.Serialize();
+            Assert.That(map["experience"].AsUUID(), Is.EqualTo(experience));
+
+            UpdateScriptTaskUpdateMessage t = new UpdateScriptTaskUpdateMessage();
+            t.Deserialize(map);
+            Assert.That(t.ExperienceID, Is.EqualTo(experience));
+
+            s.ExperienceID = UUID.Zero;
+            map = s.Serialize();
+            Assert.That(map.ContainsKey("experience"), Is.True);
+            Assert.That(map["experience"].AsUUID(), Is.EqualTo(UUID.Zero));
         }
 
         [Test]

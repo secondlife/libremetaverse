@@ -388,14 +388,26 @@ namespace LibreMetaverse
             catch (Exception ex) { return (false, ex.Message, false, null, UUID.Zero, UUID.Zero); }
         }
 
-        public async Task<(bool uploadSuccess, string uploadStatus, bool compileSuccess, List<string>? compileMessages, UUID itemID, UUID assetID)> RequestUpdateScriptTaskAsync(
+        public Task<(bool uploadSuccess, string uploadStatus, bool compileSuccess, List<string>? compileMessages, UUID itemID, UUID assetID)> RequestUpdateScriptTaskAsync(
             byte[] data, UUID itemID, UUID taskID, ScriptTarget target, bool running, CancellationToken cancellationToken = default, IProgress<ProgressReport>? progress = null)
+            => RequestUpdateScriptTaskInternalAsync(data, itemID, taskID, target, running, null, cancellationToken, progress);
+
+        /// <summary>
+        /// Updates a script in a task's inventory, associating it with an experience.
+        /// </summary>
+        /// <param name="experienceID">Experience to associate with the script; use <see cref="UUID.Zero"/> for none</param>
+        public Task<(bool uploadSuccess, string uploadStatus, bool compileSuccess, List<string>? compileMessages, UUID itemID, UUID assetID)> RequestUpdateScriptTaskAsync(
+            byte[] data, UUID itemID, UUID taskID, ScriptTarget target, bool running, UUID experienceID, CancellationToken cancellationToken = default, IProgress<ProgressReport>? progress = null)
+            => RequestUpdateScriptTaskInternalAsync(data, itemID, taskID, target, running, experienceID, cancellationToken, progress);
+
+        private async Task<(bool uploadSuccess, string uploadStatus, bool compileSuccess, List<string>? compileMessages, UUID itemID, UUID assetID)> RequestUpdateScriptTaskInternalAsync(
+            byte[] data, UUID itemID, UUID taskID, ScriptTarget target, bool running, UUID? experienceID, CancellationToken cancellationToken, IProgress<ProgressReport>? progress)
         {
             var cap = GetCapabilityURI("UpdateScriptTask");
             if (cap == null)
                 throw new InvalidOperationException("UpdateScriptTask capability is not currently available");
 
-            var msg = new UpdateScriptTaskUpdateMessage { ItemID = itemID, TaskID = taskID, ScriptRunning = running, Target = ScriptTargetToString(target) };
+            var msg = new UpdateScriptTaskUpdateMessage { ItemID = itemID, TaskID = taskID, ScriptRunning = running, Target = ScriptTargetToString(target), ExperienceID = experienceID };
             try
             {
                 var result = await PostCapAsync(cap, msg.Serialize(), cancellationToken, progress).ConfigureAwait(false);

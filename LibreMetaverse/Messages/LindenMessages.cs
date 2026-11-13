@@ -2556,6 +2556,10 @@ namespace LibreMetaverse.Messages.Linden
         public string Target; // mono or lsl2
         /// <summary>The tasks <see cref="UUID"/> which contains the script to update</summary>
         public UUID TaskID;
+        /// <summary>The experience the script is associated with. When null the
+        /// "experience" key is omitted from the request; <see cref="UUID.Zero"/>
+        /// is sent as an empty uuid (no experience)</summary>
+        public UUID? ExperienceID;
 
         /// <summary>
         /// Serialize the object
@@ -2563,13 +2567,15 @@ namespace LibreMetaverse.Messages.Linden
         /// <returns>An <see cref="OSDMap"/> containing the objects data</returns>
         public override OSDMap Serialize()
         {
-            OSDMap map = new OSDMap(4)
+            OSDMap map = new OSDMap(5)
             {
                 ["is_script_running"] = OSD.FromBoolean(ScriptRunning),
                 ["item_id"] = OSD.FromUUID(ItemID),
                 ["target"] = OSD.FromString(Target),
                 ["task_id"] = OSD.FromUUID(TaskID)
             };
+            if (ExperienceID.HasValue)
+                map["experience"] = OSD.FromUUID(ExperienceID.Value);
             return map;
         }
 
@@ -2583,6 +2589,7 @@ namespace LibreMetaverse.Messages.Linden
             ItemID = map["item_id"].AsUUID();
             Target = map["target"].AsString();
             TaskID = map["task_id"].AsUUID();
+            ExperienceID = map.ContainsKey("experience") ? map["experience"].AsUUID() : null;
         }
     }
 
