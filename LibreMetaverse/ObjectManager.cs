@@ -963,7 +963,19 @@ namespace LibreMetaverse
         /// <param name="castsShadow">true to turn the objects cast shadows property on</param>
         public void SetFlags(Simulator simulator, uint localID, bool physical, bool temporary, bool phantom, bool castsShadow)
         {
-            SetFlags(simulator, localID, physical, temporary, phantom, castsShadow, PhysicsShapeType.Prim, 1000f, 0.6f, 0.5f, 1f);
+            Client.Network.SendPacket(new ObjectFlagUpdatePacket
+            {
+                AgentData =
+                {
+                    AgentID = Client.Self.AgentID,
+                    SessionID = Client.Self.SessionID,
+                    ObjectLocalID = localID,
+                    UsePhysics = physical,
+                    IsTemporary = temporary,
+                    IsPhantom = phantom,
+                    CastsShadows = castsShadow
+                }
+            }, simulator);
         }
 
         /// <summary>
